@@ -1,0 +1,96 @@
+---
+title: "Cyclistic Bike-Share Case Study"
+author: "Raymond Mutyaba"
+date: 2020-10-12
+output: html_notebook
+---
+### How do annual members and casual members use Cyclistic bikes differently?
+
+### The Dataset
+12 months (2020-10 to 2021-09) of bike-sharing data from Motivate International Inc. who operates the City of Chicago’s Divvy bicycle sharing service.
+
+Used with permission under [license](https://www.divvybikes.com/data-license-agreement)
+
+#### Importing Data
+First I will import the datasets and the necessary libraries.
+```{r}
+library(readr)
+a202010 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202010-divvy-tripdata.csv")
+a202011 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202011-divvy-tripdata.csv")
+a202012 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202012-divvy-tripdata.csv")
+a202101 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202101-divvy-tripdata.csv")
+a202102 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202102-divvy-tripdata.csv")
+a202103 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202103-divvy-tripdata.csv")
+a202104 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202104-divvy-tripdata.csv")
+a202105 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202105-divvy-tripdata.csv")
+a202106 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202106-divvy-tripdata.csv")
+a202107 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202107-divvy-tripdata.csv")
+a202108 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202108-divvy-tripdata.csv")
+a202109 <- read_csv("Downloads/Coursera Data Analytics Case Studys/Bike Share Data/202109-divvy-tripdata.csv")
+library(tidyverse)
+library(tidyr)
+library(lubridate)
+library(dplyr)
+library("here")
+library("skimr")
+library("janitor")
+```
+
+#### Cleaning Data
+A glimpse of each of the 12 data frames shows 13 columns with datetime, character, and double data types. There are some discrepancies in the column data types in the October, November and December 2020 datasets. The start_station_id and end_station_id columns are imported as double data types. Whereas in the other datasets they are character data types. There are several different types of id formats used throughout the 12 months and some ids contain characters. Also, some ids are listed as 'NA'. The solution I used was to convert those doubles into characters. After that I can merge the data.
+
+```{r}
+glimpse(a202010)
+glimpse(a202011)
+glimpse(a202012)
+glimpse(a202101)
+glimpse(a202102)
+glimpse(a202103)
+glimpse(a202104)
+glimpse(a202105)
+glimpse(a202106)
+glimpse(a202107)
+glimpse(a202108)
+glimpse(a202109)
+a202010 <- mutate(a202010, start_station_id=as.character(start_station_id), end_station_id=as.character(end_station_id))
+a202011 <- mutate(a202011, start_station_id=as.character(start_station_id), end_station_id=as.character(end_station_id))
+a202012 <- mutate(a202012, start_station_id=as.character(start_station_id), end_station_id=as.character(end_station_id))
+glimpse(a202010)
+glimpse(a202011)
+glimpse(a202012)
+bike_trips <- bind_rows(a202010,a202011,a202012,a202101,a202102,a202103,a202104,a202105,a202106,a202107,a202108,a202109)
+glimpse(bike_trips)
+```
+
+Now I will group the data by rideable_type and discover that there are 3 types of bike (classic, docked, and electric). There are 2 member types (member and casual). There are 1300 station ids. Some of the ids are duplicates (ex. 20 and 20.0, 329) and need to be merged. 523781 (~10%) are 'NA'. Also there are 209 (418 / 2) duplicate ride_ids. Each of the 209 ids are duplicated only once. Those ids have an ended_at date of 2020-11-25. The duplicates have an invalid started_at date of 2020-12-15. There are 3,304 rows with invalid trip times (ended_at < started_at).
+
+```{r}
+bike_trips %>% group_by(rideable_type) %>% summarize(total=length(rideable_type))
+bike_trips %>% group_by(member_casual) %>% summarize(total=length(member_casual))
+bike_trips %>% group_by(start_station_id) %>% summarize(total=length(start_station_id))
+bike_trips %>% group_by(ride_id) %>% filter(length(ride_id)>1) %>% summarize(rideable_type, started_at, ended_at, start_station_name, end_station_name)
+```
+
+To clean the data I will remove the 3,304 rows with invalid started_at and ended_at dates. 523467 start_station_names are 'NA' (second most common station is only 77587). So station names will not be used for this analysis. There are no 'NA' gps coordinates. So those will be used in place of station names. To make the gps coordinates easier to view on a map, coordinates which belong the same start_station_name and end_station_name will be averaged. I will remove the 339930 rows where the start station equals the end station. The average ride length of the dropped rows were 3079 secs for casual riders and 1000 secs for the members. The average ride length of the cleaned data was 1870 secs for the casual riders and 813 for the members. The longest ride time for the casual where start station equals end station was over 20 days. The longest for the member was over 1 day. The smallest ride length was 1 second.
+
+```{r}
+bike_trips_cleaned <- bike_trips %>% filter(as.double(difftime(ended_at, started_at, units="hours")) > 0)
+bike_trips_cleaned_v2 <- bike_trips_cleaned %>% group_by(start_station_name) %>% drop_na() %>% mutate(start_lat=mean(start_lat),start_lng=mean(start_lng))
+bike_trips_cleaned_v2 <- bike_trips_cleaned_v2 %>% group_by(end_station_name) %>% drop_na() %>% mutate(end_lat=mean(end_lat),end_lng=mean(end_lng))
+bike_trips_na <- bike_trips_cleaned %>% filter(is.na(start_station_name) | is.na(end_station_name) | is.na(start_station_id) | is.na(end_station_id))
+bike_trips_cleaned_v3 <- bind_rows(bike_trips_cleaned_v2, bike_trips_na)
+bike_trips_cleaned_v4 <- bike_trips_cleaned_v3 %>% filter(start_station_name != end_station_name)
+```
+
+#### Analyzing Data
+Started_at and ended_at were combined to create the mean_ride_length_secs. Grouping by member_casual shows that casual members have, on average, over 2.2 times longer trip times than members.
+
+```{r}
+bike_trips_cleaned_v5 <- mutate(bike_trips_cleaned_v4, ride_length_secs=as.numeric(difftime(ended_at,started_at,units = "secs")))
+bike_trips_cleaned_v5 %>% group_by(member_casual) %>% summarise(total_member_casual=length(member_casual), percentage=(length(member_casual)/5132499)*100, mean_ride_length_secs=mean(ride_length_secs)) %>% View()
+bike_trips_cleaned_v5 %>% group_by(member_casual, rideable_type) %>% summarise(total_member_casual=length(member_casual), percentage_member_casual=(length(member_casual)/5132499)*100, mean_ride_length_secs=mean(ride_length_secs)) %>% View()
+bike_trips_cleaned_v6 <- bike_trips_cleaned_v5 %>% ungroup() %>% select(-c("start_station_id", "end_station_id", "end_station_name", "start_station_name"))
+write_csv(bike_trips_cleaned_v6, "2021_10_17_cyclistic_bike_trips_cleaned.csv")
+```
+
+More analysis of the data using charts created with Tableau can be found in my  [presentation](https://docs.google.com/presentation/d/1fbEm2tdWlBzickAKMUo71jz3vDHNAHB99ldZ_XYAfyY/edit?usp=sharing).
